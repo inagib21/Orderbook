@@ -81,15 +81,50 @@ class Order
         void Fill( Quantity quantity)
         {
             if(quantity > GetRemainingQuantity())
-                throw std:: logic_error(std:: format("Order ({}) cannor be filled for more than its remaining quantity", GetOrderId()));
+                throw std::logic_error(std:: format("Order ({}) cannor be filled for more than its remaining quantity", GetOrderId()));
 
                 remainingQuantity -= quantity;
         }
 
-
-        
-        
+        private:
+            OrderType ordeerType_;
+            OrderId orderId_;
+            Side side_;
+            Price price_;
+            Quantity iniitialQuantity_;
+            Quantity remmainingQuantity_;                
         };
+
+using OrderPointer = std::shared_ptr<Order>;
+using OrderPointers = std::list<OrderPointer>;
+
+class OrderModify
+{
+    public:
+        OrderModify(OrderId orderId, Side side, Price price, Quantity Quantity)
+        : orderId_{orderId}
+        ,price_{price}
+        ,side_{side}
+        ,quantity_{quantity}
+        {}
+
+        OrderId GetOrderId() const {return orderId_;}
+        Price GetPrice() const {return price_;}
+        Side GetSide() const {return side_;}
+        Quantity GetQuantity() const {return quantity_;}
+
+        OrderPointer TOORDERPOINTER(OrderType type ) const
+        {
+            return std::make_shared<Order>(type, GetOrdeerId(), Getside(), GetPrice(), GetQuantity());
+        }
+        private:
+        OrderId orderId_;
+        Price price_;
+        Side side_;
+        Quantity quantity_;
+
+};
+
 
 
 int main()
