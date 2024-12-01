@@ -18,58 +18,57 @@
 #include <tuple>
 #include <format>
 
-enum class OrderType
-{
-    GoodTillCancel,
-    FillandKill
+// Enum to define order types
+enum class OrderType {
+    GoodTillCancel,  // The order remains in the book until canceled
+    FillandKill      // The order is executed immediately or canceled
 };
 
-enum class Side
-{
-    Buy,
-    Sell
+// Enum to define order sides
+enum class Side {
+    Buy,  // Buy side of the order
+    Sell  // Sell side of the order
 };
 
-using Price = std:: int32_t;
-using Quantity = std :: uint32_t;
-using OrderId = std::uint64_t;
+// Type aliases for better code readability
+using Price = std::int32_t;       // Price represented as a signed 32-bit integer
+using Quantity = std::uint32_t;   // Quantity represented as an unsigned 32-bit integer
+using OrderId = std::uint64_t;    // Order ID represented as an unsigned 64-bit integer
 
-struct LevelInfo
-{
-    Price price_;
-    Quantity quantity_;
+// Structure representing a single level in the order book (price and total quantity)
+struct LevelInfo {
+    Price price_;      // The price level
+    Quantity quantity_; // The total quantity at the price level
 };
 
-using LevelInfos = std ::vector<LevelInfo>;
+// Type alias for a vector of price levels in the order book
+using LevelInfos = std::vector<LevelInfo>;
 
-class OrderbookLevelInfos
-{
+// Class to hold information about the bid and ask levels in the order book
+class OrderbookLevelInfos {
 public:
+    // Constructor to initialize bid and ask levels
     OrderbookLevelInfos(const LevelInfos& bids, const LevelInfos& asks)
-    : bids_{ bids }
-    , asks_{ asks }
-    { }
+        : bids_{bids}, asks_{asks} {}
 
-    const LevelInfos& GetBids() const { return bids_;}
-    const LevelInfos& GetAsks() const { return asks_;}
+    // Getters for bid and ask levels
+    const LevelInfos& GetBids() const { return bids_; }
+    const LevelInfos& GetAsks() const { return asks_; }
 
- private:
-    LevelInfos  bids;
-    LevelInfos asks_;
-
+private:
+    LevelInfos bids_; // Vector of bid levels
+    LevelInfos asks_; // Vector of ask levels
 };
 
+// Class representing an individual order
 class Order {
 public:
+    // Constructor to initialize an order with its details
     Order(OrderType orderType, OrderId orderId, Side side, Price price, Quantity quantity)
-        : orderType_{orderType}
-        , orderId_{orderId}
-        , side_{side}
-        , price_{price}
-        , initialQuantity_{quantity}
-        , remainingQuantity_{quantity} 
-    {}
+        : orderType_{orderType}, orderId_{orderId}, side_{side},
+          price_{price}, initialQuantity_{quantity}, remainingQuantity_{quantity} {}
 
+    // Getters for order properties
     OrderId GetOrderId() const { return orderId_; }
     Side GetSide() const { return side_; }
     Price GetPrice() const { return price_; }
@@ -78,78 +77,138 @@ public:
     Quantity GetRemainingQuantity() const { return remainingQuantity_; }
     Quantity GetFilledQuantity() const { return GetInitialQuantity() - GetRemainingQuantity(); }
 
+    // Update remaining quantity when an order is partially or fully filled
     void Fill(Quantity quantity) {
-        if (quantity > GetRemainingQuantity())
+        if (quantity > GetRemainingQuantity()) {
             throw std::logic_error(std::format("Order ({}) cannot be filled for more than its remaining quantity", GetOrderId()));
-
-        remainingQuantity_ -= quantity; 
+        }
+        remainingQuantity_ -= quantity;
     }
 
 private:
-    OrderType orderType_;
-    OrderId orderId_;
-    Side side_;
-    Price price_;
-    Quantity initialQuantity_;
-    Quantity remainingQuantity_; 
+    OrderType orderType_;        // Type of the order
+    OrderId orderId_;            // Unique identifier for the order
+    Side side_;                  // Buy or Sell side
+    Price price_;                // Price of the order
+    Quantity initialQuantity_;   // Original quantity of the order
+    Quantity remainingQuantity_; // Quantity left to be executed
 };
 
+// Type aliases for managing orders
+using OrderPointer = std::shared_ptr<Order>;     // Pointer to an Order object
+using OrderPointers = std::list<OrderPointer>;   // List of Order pointers
 
-using OrderPointer = std::shared_ptr<Order>;
-using OrderPointers = std::list<OrderPointer>;
-
+// Class to modify an existing order
 class OrderModify {
 public:
+    // Constructor to initialize modification details
     OrderModify(OrderId orderId, Side side, Price price, Quantity quantity)
-        : orderId_{orderId}
-        , price_{price}
-        , side_{side}
-        , quantity_{quantity}
-    {}
+        : orderId_{orderId}, price_{price}, side_{side}, quantity_{quantity} {}
 
+    // Getters for order modification details
     OrderId GetOrderId() const { return orderId_; }
     Price GetPrice() const { return price_; }
     Side GetSide() const { return side_; }
     Quantity GetQuantity() const { return quantity_; }
 
+    // Convert the modification to a new Order pointer
     OrderPointer ToOrderPointer(OrderType type) const {
         return std::make_shared<Order>(type, GetOrderId(), GetSide(), GetPrice(), GetQuantity());
     }
 
 private:
-    OrderId orderId_;
-    Price price_;
-    Side side_;
-    Quantity quantity_;
+    OrderId orderId_;  // Order ID to be modified
+    Price price_;      // Updated price
+    Side side_;        // Updated side
+    Quantity quantity_; // Updated quantity
 };
 
-
-struct TradeInfo
-{
-    OrderId orderId_;
-    Price price_;
-    Quantity quantity;
+// Structure representing information about a trade
+struct TradeInfo {
+    OrderId orderId_;  // Order ID involved in the trade
+    Price price_;      // Trade price
+    Quantity quantity; // Quantity traded
 };
+
+// Class representing a single trade involving a bid and an ask
 class Trade {
 public:
+    // Constructor to initialize trade details
     Trade(const TradeInfo& bidTrade, const TradeInfo& askTrade)
-        : bidTrade_{bidTrade}
-        , askTrade_{askTrade}
-    {}
+        : bidTrade_{bidTrade}, askTrade_{askTrade} {}
 
+    // Getters for bid and ask trade details
     const TradeInfo& GetBidTrade() const { return bidTrade_; }
     const TradeInfo& GetAskTrade() const { return askTrade_; }
 
 private:
-    TradeInfo bidTrade_;
-    TradeInfo askTrade_;
+    TradeInfo bidTrade_; // Trade information on the bid side
+    TradeInfo askTrade_; // Trade information on the ask side
 };
 
-using Trades = std:: vector<Trade>;
+// Type alias for a collection of trades
+using Trades = std::vector<Trade>;
 
+// Orderbook class to manage bid and ask orders
+class Orderbook {
+private:
+    // Internal structure to represent an entry in the order book
+    struct OrderEntry {
+        OrderPointer order_{nullptr};              // Pointer to the order
+        OrderPointers::iterator location_;         // Location of the order in the order pointers list
+    };
 
+    // Maps for bid and ask orders, sorted by price
+    std::map<Price, OrderPointers, std::greater<Price>> bids_; // Bid orders sorted descending
+    std::map<Price, OrderPointers, std::less<Price>> asks_;    // Ask orders sorted ascending
 
-int main()
-{
+    // Map to track orders by their unique ID
+    std::unordered_map<OrderId, OrderEntry> orders_;
+
+    // Check if a trade can match for a given side and price
+    bool canMatch(Side side, Price price) const {
+        if (side == Side::Buy) {
+            // Check if the best ask price satisfies the buy condition
+            if (asks_.empty()) return false;
+            const auto& [bestAsk, _] = *asks_.begin();
+            return price >= bestAsk;
+        } else {
+            // Check if the best bid price satisfies the sell condition
+            if (bids_.empty()) return false;
+            const auto& [bestBid, _] = *bids_.begin();
+            return price <= bestBid;
+        }
+    }
+
+    Trades MaatchOrders()
+    {
+        Trades trades;
+        trades.reserve(orders_.size());
+        
+        while(true)
+        {
+            if (bids_.empty()  || asks_.empty())
+                break;
+
+            auto& [bidPrice, bids] = *bids_.begin();
+            auto& [askPrice, asks] = *asks_.begin();
+
+               if (bidPrice< askPrice)
+                    break;
+
+                while (bids.size() && asks.size())
+                {
+                    auto&& bid = bids.front();
+                    auto&& ask = asks.front();
+                    
+
+                }    
+
+        }
+
+    }
+};
+
+int main() {
     return 0;
 }
