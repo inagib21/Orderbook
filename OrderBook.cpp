@@ -76,7 +76,7 @@ public:
     Quantity GetInitialQuantity() const { return initialQuantity_; }
     Quantity GetRemainingQuantity() const { return remainingQuantity_; }
     Quantity GetFilledQuantity() const { return GetInitialQuantity() - GetRemainingQuantity(); }
-
+    bool isFilled() const {return GetRemainingQuantity() == 0 s;}
     // Update remaining quantity when an order is partially or fully filled
     void Fill(Quantity quantity) {
         if (quantity > GetRemainingQuantity()) {
@@ -200,7 +200,33 @@ private:
                 {
                     auto&& bid = bids.front();
                     auto&& ask = asks.front();
+
+                    Quantity quantity  = std:: min(bid-> GetRemainingQuantity(), ask->GetRemainingQuantity());
+
+                    bid->Fill(quantity);
+                    ask->Fill(quantity);
+
+                    if(bid-> isFilled() ) 
+                    {
+                        bids.pop_front();
+                        orders_.erase(bid->GetOrderId());
+                    }
+                    if (ask->isFilled())
+                    {
+                        asks.pop_front();
+                        orders_.erase(ask->GetOrderId());
+                    }
+                    if (bids.empty())
+                        bids_.erase(bidPrice);
                     
+                    if (asks.empty())
+                        asks_.erase(askPrice);
+
+                    trades.push_back(Trade{ 
+                        TradeInfo{bid -> GetOrderId(), bid ->GetPrice(),quantity},
+                        TradeInfo{ask -> GetOrderId(), ask ->GetPrice(),quantity}
+                        }) ;  
+
 
                 }    
 
@@ -212,3 +238,4 @@ private:
 int main() {
     return 0;
 }
+ 
