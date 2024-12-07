@@ -166,7 +166,7 @@ private:
     std::unordered_map<OrderId, OrderEntry> orders_;
 
     // Check if a trade can match for a given side and price
-    bool canMatch(Side side, Price price) const {
+    bool CanMatch(Side side, Price price) const {
         if (side == Side::Buy) {
             // Check if the best ask price satisfies the buy condition
             if (asks_.empty()) return false;
@@ -180,59 +180,172 @@ private:
         }
     }
 
-    Trades MaatchOrders()
+    // Matches bids and asks to execute trades.
+Trades MatchOrders()
+{
+    Trades trades; // Container to store executed trades.
+    trades.reserve(orders_.size()); // Pre-allocate space based on the number of existing orders.
+
+    while (true) // Continuous matching until no more matches can occur.
     {
-        Trades trades;
-        trades.reserve(orders_.size());
-        
-        while(true)
+        // If there are no bids or asks, stop matching.
+        if (bids_.empty() || asks_.empty())
+            break;
+
+        // Get the best bid (highest price) and best ask (lowest price).
+        auto& [bidPrice, bids] = *bids_.begin();
+        auto& [askPrice, asks] = *asks_.begin();
+
+        // If the best bid price is lower than the best ask price, no match is possible.
+        if (bidPrice < askPrice)
+            break;
+
+        // Process matching between the current best bid and ask.
+        while (!bids.empty() && !asks.empty())
         {
-            if (bids_.empty()  || asks_.empty())
-                break;
+            auto&& bid = bids.front(); // Get the first (oldest) order from the bid queue.
+            auto&& ask = asks.front(); // Get the first (oldest) order from the ask queue.
 
-            auto& [bidPrice, bids] = *bids_.begin();
-            auto& [askPrice, asks] = *asks_.begin();
+            // Determine the quantity to trade (minimum of the remaining quantities of bid and ask).
+            Quantity quantity = std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
 
-               if (bidPrice< askPrice)
-                    break;
+            // Execute the trade by reducing the remaining quantities of both orders.
+            bid->Fill(quantity);
+            ask->Fill(quantity);
 
-                while (bids.size() && asks.size())
-                {
-                    auto&& bid = bids.front();
-                    auto&& ask = asks.front();
+            // If the bid is fully filled, remove it from the queue and order map.
+            if (bid->IsFilled())
+            {
+                bids.pop_front();
+                orders_.erase(bid->GetOrderId());
+            }
 
-                    Quantity quantity  = std:: min(bid-> GetRemainingQuantity(), ask->GetRemainingQuantity());
+            // If the ask is fully filled, remove it from the queue and order map.
+            if (ask->IsFilled())
+            {
+                asks.pop_front();
+                orders_.erase(ask->GetOrderId());
+            }
 
-                    bid->Fill(quantity);
-                    ask->Fill(quantity);
+            // If there are no more bids at this price, remove the price level.
+            if (bids.empty())
+                bids_.erase(bidPrice);
 
-                    if(bid-> isFilled() ) 
-                    {
-                        bids.pop_front();
-                        orders_.erase(bid->GetOrderId());
-                    }
-                    if (ask->isFilled())
-                    {
-                        asks.pop_front();
-                        orders_.erase(ask->GetOrderId());
-                    }
-                    if (bids.empty())
-                        bids_.erase(bidPrice);
-                    
-                    if (asks.empty())
-                        asks_.erase(askPrice);
+            // If there are no more asks at this price, remove the price level.
+            if (asks.empty())
+                asks_.erase(askPrice);
 
-                    trades.push_back(Trade{ 
-                        TradeInfo{bid -> GetOrderId(), bid ->GetPrice(),quantity},
-                        TradeInfo{ask -> GetOrderId(), ask ->GetPrice(),quantity}
-                        }) ;  
-
-
-                }    
-
+            // Record the trade details.
+            trades.push_back(Trade{
+                TradeInfo{bid->GetOrderId(), bid->GetPrice(), quantity}, // Bid side trade info.
+                TradeInfo{ask->GetOrderId(), ask->GetPrice(), quantity}  // Ask side trade info.
+            });
         }
+    }
+
+    // Check for remaining unmatched Fill-and-Kill orders on the bid side.
+    if (!bids_.empty())
+    {
+        auto& [_, bids] = *bids_.begin();
+        auto& order = bids.front();
+        if (order->GetOrderType() == OrderType::FillAndKill)
+            CancelOrder(order->GetOrderId()); // Cancel the order if it cannot be matched.
+    }
+
+    // Check for remaining unmatched Fill-and-Kill orders on the ask side.
+    if (!asks_.empty())
+    {
+        auto& [_, asks] = *asks_.begin();
+        auto& order = asks.front();
+        if (order->GetOrderType() == OrderType::FillAndKill)
+            CancelOrder(order->GetOrderId()); // Cancel the order if it cannot be matched.
+    }
+
+    return trades; // Return the list of executed trades.
+}
+
+// Adds a new order and attempts to match it immediately.
+Trades AddOrder(OrderPointer order)
+{
+    // Ignore the order if it already exists.
+    if (orders_.contains(order->GetOrderId()))
+        return {};
+
+    // For Fill-and-Kill orders, reject the order if it cannot be matched immediately.
+    if (order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice()))
+        return {};
+
+    OrderPointers::iterator iterator;
+
+    // Add the order to the appropriate side (bid or ask).
+    if (order->GetSide() == Side::Buy)
+    {
+        auto& orders = bids_[order->GetPrice()]; // Access the bid price level.
+        orders.push_back(order); // Add the order to the price level.
+        iterator = std::next(orders.begin(), orders.size() - 1); // Iterator to the newly added order.
+    }
+    else
+    {
+        auto& orders = asks_[order->GetPrice()]; // Access the ask price level.
+        orders.push_back(order); // Add the order to the price level.
+        iterator = std::next(orders.begin(), orders.size() - 1); // Iterator to the newly added order.
+    }
+
+    // Add the order to the global map for tracking.
+    orders_.insert({order->GetOrderId(), OrderEntry{order, iterator}});
+
+    // Attempt to match orders after adding the new one.
+    return MatchOrders();
+}
+
+// Cancels an existing order.
+void CancelOrder(OrderId orderId)
+{
+    // If the order does not exist, return early.
+    if (!orders_.contains(orderId))
+        return;
+
+    // Retrieve the order and its iterator in the price level.
+    const auto& [order, iterator] = orders_.at(orderId);
+
+    // Remove the order from the global map.
+    orders_.erase(orderId);
+
+    if (order->GetSide() == Side::Sell) // For sell orders.
+    {
+        auto price = order->GetPrice(); // Get the price level of the order.
+        auto& orders = asks_.at(price); // Access the orders at this price level.
+        orders.erase(iterator); // Remove the order from the price level.
+
+        // If no orders remain at this price level, remove the level.
+        if (orders.empty())
+            asks_.erase(price);
+    }
+    else // For buy orders.
+    {
+        auto price = order->GetPrice(); // Get the price level of the order.
+        auto& orders = bids_.at(price); // Access the orders at this price level.
+        orders.erase(iterator); // Remove the order from the price level.
+
+        // If no orders remain at this price level, remove the level.
+        if (orders.empty())
+            bids_.erase(price);
+    }
+}
+
+  
+
+    Trades MatchOrder(OrderModify order)
+    {
+        if (!orders_.contains(order.GetOrderId()))
+            return  {};
+            const auto& [existingOrder, _] = orders_.at(order.GetOrderId());
+            CancelOrder(order.GetOrderId());
+            return AddOrder(order.ToOrderPointer(existOrder-> GetOrderType()));
 
     }
+    std:: size_t sSize() const {return orders_.size();}
+
 };
 
 int main() {
