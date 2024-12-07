@@ -332,7 +332,6 @@ void CancelOrder(OrderId orderId)
             bids_.erase(price);
     }
 }
-
   
 
     Trades MatchOrder(OrderModify order)
