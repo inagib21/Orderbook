@@ -340,10 +340,25 @@ void CancelOrder(OrderId orderId)
             return  {};
             const auto& [existingOrder, _] = orders_.at(order.GetOrderId());
             CancelOrder(order.GetOrderId());
-            return AddOrder(order.ToOrderPointer(existOrder-> GetOrderType()));
+            return AddOrder(order.ToOrderPointer(existingOrder-> GetOrderType()));
 
     }
     std:: size_t sSize() const {return orders_.size();}
+    
+    OrderbookLevelInfos GetorderInfos() const 
+    {
+        levelInfos bidInfos, askInfos;
+        bidInfos.reserve(orders_.size());
+        askInfos.reserve(orders_.size());
+
+        auto CreateLevelInfos =  [](Price price, const OrderPointers& orders)
+        {
+            return LevelInfo{ price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,
+            [](std::size_t runningSum, const Order OrderPointer& order)
+            { return  runningSum + order->GetRemainingQuantity(); }
+            )};
+        }
+    }
 
 };
 
